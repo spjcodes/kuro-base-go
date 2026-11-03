@@ -98,7 +98,7 @@ process but the one that owns DDL.
 ```bash
 cd app
 pnpm install
-cp .env.example .env                     # EXPO_PUBLIC_API_URL must reach the API
+cp .env.example .env                     # optional: set EXPO_PUBLIC_API_URL for a deployed API
 pnpm generate:sdk                        # writes ./client from ../api/docs/api/openapi.json
 pnpm dev                                 # then press i / a / w
 ```
@@ -106,8 +106,11 @@ pnpm dev                                 # then press i / a / w
 `client/` is generated and git-ignored — a fresh checkout needs
 `pnpm generate:sdk` before `pnpm typecheck` will pass.
 
-On a physical device `localhost` is the phone itself: point
-`EXPO_PUBLIC_API_URL` at the machine's LAN address.
+In development the API origin is derived from the Expo dev server, so
+`localhost` in `.env` is only used on web. A physical phone reaches the API
+through this machine's LAN address, and an Android emulator through `10.0.2.2`;
+both assume the API is running on port 8080. Set `EXPO_PUBLIC_API_URL` when the
+API lives somewhere else.
 
 ---
 
