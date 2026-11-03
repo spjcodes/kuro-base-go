@@ -1,0 +1,155 @@
+# Kuro Base — Full-Stack Starter
+
+A reusable starting point for a new product: a **Go + Gin** API and an **Expo +
+React Native** app, wired together through an SDK generated from the API's own
+OpenAPI document.
+
+The domain layer (products, carts, orders, payments) is deliberately absent. What
+is here is the common layer every project of this shape needs, already working:
+authentication, the auth-aware HTTP pipeline, i18n, theme, and unified error
+reporting.
+
+---
+
+## 📁 Project Structure
+
+```
+kuro-base-go/
+├── api/                     # Go 1.26 · Gin · GORM/PostgreSQL · JWT
+│   ├── cmd/api/             # entry point (swagger annotations live here)
+│   ├── config/              # environment + structured logging
+│   ├── database/            # PostgreSQL and Redis connections
+│   ├── docs/api/            # generated: OpenAPI 3.0 + Swagger UI payload
+│   ├── handlers/            # HTTP layer only
+│   ├── httperr/             # one mapping table: error → status + message key
+│   ├── i18n/                # translated API messages (zh/en/ja)
+│   ├── middleware/          # auth, request id, logging, locale negotiation
+│   ├── models/              # GORM models + request/response DTOs
+│   ├── repositories/        # data access
+│   ├── router/              # route table + dependency graph
+│   ├── services/            # business logic
+│   ├── scripts/             # swag → OpenAPI 3.0 conversion
+│   └── utils/               # JWT, bcrypt
+└── app/                     # Expo 54 · expo-router 6 · NativeWind · TanStack Query
+    ├── app/                 # routes (file-based)
+    ├── client/              # generated: axios client, TanStack Query options, zod schemas
+    ├── components/auth/     # sign-in / register / forgot-password forms
+    ├── components/custom/   # toast, error page, loading, switchers, web tab bar
+    ├── components/ui/       # shadcn-style RN Reusables primitives
+    ├── context/             # auth and preferences providers
+    ├── lib/                 # api base URL, error reporting, token storage, i18n
+    └── plugins/             # Xcode 27 / iOS 26 config fixes
+```
+
+---
+
+## ✨ What is included
+
+**API**
+- JWT auth: `POST /auth/login`, `POST /auth/register`, `GET /auth/refresh`
+  (access token 15 min, refresh token 24 h)
+- Protected `GET /user`, `PUT /user`, `DELETE /user`
+- Passwords hashed with bcrypt; soft deletes; GORM AutoMigrate
+- Layered handlers → services → repositories, with a single error-mapping table
+  (`httperr`) that keeps HTTP details out of the layers below it
+- `Accept-Language` negotiation, so error messages come back in the caller's
+  language
+- Structured `slog` logging with request ids, panic recovery, CORS
+- Swagger UI at `/swagger/index.html`, plus an OpenAPI 3.0 document the SDK
+  generator reads
+
+**App**
+- Sign-in, register and forgot-password screens with `react-hook-form` + `zod`
+  validation (messages follow the active language)
+- Access token in memory, refresh token in the platform keystore
+  (SecureStore; `localStorage` on web), lazy boot, single-flight refresh on 401,
+  and `Stack.Protected` route guarding
+- Three languages (zh/en/ja) with a persisted preference, applied before the
+  first frame; the same preference drives `Accept-Language`
+- Light/dark theme, also persisted and applied before the first frame
+- One toast for every API failure: `MutationCache` reports it in one place and
+  `lib/api-error.ts` dedupes repeats
+- Bottom tabs on native, a top tab bar on web, and a width-capped shell so the
+  app does not stretch across a desktop browser
+
+---
+
+## 🚀 Getting Started
+
+### 1. API
+
+```bash
+cd api
+createdb kuro_base                       # or any PostgreSQL client
+cp .env.example .env                     # then set JWT_SECRET / JWT_REFRESH_SECRET
+go mod download
+make run                                 # listens on :8080
+```
+
+`GET http://localhost:8080/ping` should return `{"Message":"Pong"}` and
+`/swagger/index.html` should render the API docs.
+
+Redis is configured but nothing reads the cache yet; the client connects lazily,
+so a missing Redis does not stop the server. Set `RUN_MIGRATIONS=false` on every
+process but the one that owns DDL.
+
+### 2. App
+
+```bash
+cd app
+pnpm install
+cp .env.example .env                     # EXPO_PUBLIC_API_URL must reach the API
+pnpm generate:sdk                        # writes ./client from ../api/docs/api/openapi.json
+pnpm dev                                 # then press i / a / w
+```
+
+`client/` is generated and git-ignored — a fresh checkout needs
+`pnpm generate:sdk` before `pnpm typecheck` will pass.
+
+On a physical device `localhost` is the phone itself: point
+`EXPO_PUBLIC_API_URL` at the machine's LAN address.
+
+---
+
+## 🔄 Changing the API surface
+
+The app's client is generated, never hand-edited:
+
+```bash
+cd api && make docs      # swag init → swagger2openapi → docs/api/openapi.json
+cd ../app && pnpm generate:sdk
+```
+
+A new endpoint therefore follows one path: model → repository → service →
+handler (with swagger annotations) → route in `router/api.go` → `make docs` →
+`pnpm generate:sdk`.
+
+---
+
+## 🧠 Architecture notes
+
+- **The access token is never persisted.** It lives in a ref for its 15 minutes;
+  on a cold start the app reads the refresh token from the keystore, treats its
+  presence as the session, and lets the first 401 mint a new access token. See
+  `app/app/_layout.tsx` and `app/context/auth-context.tsx`.
+- **Refresh is single-flight.** Concurrent 401s share one `GET /auth/refresh`,
+  and a session-epoch check stops a refresh that belonged to a session which
+  ended mid-flight from publishing a token into the next one.
+- **Preferences are applied before the first render**, not corrected after it:
+  `PreferencesProvider` renders nothing until storage has been read, so there is
+  no flash of the wrong language or theme.
+- **Every failure is reported once.** Mutations report through the
+  `MutationCache`; screens with their own message keep it; repeats inside four
+  seconds collapse.
+- **The API translates its own errors.** Handlers answer with a message key and
+  `Accept-Language` decides the wording, so the client can display the server's
+  message directly and only needs fallbacks for transport failures.
+
+---
+
+## ✅ Checks
+
+```bash
+cd api && go build ./... && go vet ./...
+cd app && pnpm typecheck
+```

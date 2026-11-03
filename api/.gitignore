@@ -1,0 +1,9 @@
+# local env files
+.env*
+
+# build output
+bin/
+tmp/
+
+# test output
+coverage.out
